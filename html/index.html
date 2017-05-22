@@ -1,0 +1,1043 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Jack Track</title>
+    <script src="phaser.js"></script>
+    <script type="text/javascript">
+
+      // HTML/JS Functions
+      // -----------------
+      function queryParams(param) { 
+        var query = window.location.search.substring(1);
+        var vars = query.split('&');
+
+        for (var i = 0; i < vars.length; i++) {
+          var pair = vars[i].split('=');
+          if (decodeURIComponent(pair[0]) === param) {
+            return decodeURIComponent(pair[1]);
+          }
+        }
+        console.log('Query param %s not found', param);
+      }
+
+      // Phaser Functions
+      // ----------------
+      window.onload = function() {
+        var game = new Phaser.Game(2100, 1406, Phaser.CANVAS, 'jack-track', { preload: preload, create: create });
+
+        function preload () {
+          game.load.image('whitechapel', 'whitechapel_board.jpg');
+          game.load.image('jack', 'jack.jpg');
+          game.load.image('jack_walk', 'jack_walk.jpg');
+          game.load.image('jack_alley', 'jack_alley.jpg');
+          game.load.image('jack_carriage', 'jack_carriage.jpg');
+          game.load.image('det', 'det.jpg');
+          game.load.image('det_sniff_hit', 'det_sniff_hit.jpg');
+          game.load.image('det_sniff_miss', 'det_sniff_miss.jpg');
+          game.load.image('det_arrest_miss', 'det_arrest_miss.jpg');
+        }
+
+        // HTTP Requests
+        // -------------
+        var rootUrl = "http://localhost:8080";
+
+        var noActionOnreadystatechangeFn = function(xmlHttp) {
+          return function() {
+            if (xmlHttp.readyState == XMLHttpRequest.DONE) {
+              if (xmlHttp.status == 200) {
+                // no action
+              } else if (xmlHttp.status === 400) {
+                alert('Malformed request: ' + xmlHttp.responseText);
+              } else if (xmlHttp.status == 0) {
+                console.log("Server not available")
+              } else {
+                alert("Error: [" + xmlHttp.status + "] " + xmlHttp.responseText);
+              }
+            }
+
+          }
+        }
+
+        var jackWalkRequest = function(session) {
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = noActionOnreadystatechangeFn(xmlHttp);
+          xmlHttp.open("POST", rootUrl + "/jack/walk", false);
+          xmlHttp.setRequestHeader("Content-type", "application/json");
+          xmlHttp.send(JSON.stringify({session:session}));
+        }
+
+        var jackAlleyRequest = function(session) {
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = noActionOnreadystatechangeFn(xmlHttp);
+          xmlHttp.open("POST", rootUrl + "/jack/alley", false);
+          xmlHttp.setRequestHeader("Content-type", "application/json");
+          xmlHttp.send(JSON.stringify({session:session}));
+        }
+
+        var jackCarriageRequest = function(session) {
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = noActionOnreadystatechangeFn(xmlHttp);
+          xmlHttp.open("POST", rootUrl + "/jack/car", false);
+          xmlHttp.setRequestHeader("Content-type", "application/json");
+          xmlHttp.send(JSON.stringify({session:session}));
+        }
+
+        var detSniffMissRequest = function(session, indices) {
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = noActionOnreadystatechangeFn(xmlHttp);
+          xmlHttp.open("POST", rootUrl + "/det/sniffmiss", false);
+          xmlHttp.setRequestHeader("Content-type", "application/json");
+          xmlHttp.send(JSON.stringify({session:session,
+                                       nodes:indices}));
+        }
+
+        var detSniffHitRequest = function(session, indices) {
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = noActionOnreadystatechangeFn(xmlHttp);
+          xmlHttp.open("POST", rootUrl + "/det/sniffhit", false);
+          xmlHttp.setRequestHeader("Content-type", "application/json");
+          xmlHttp.send(JSON.stringify({session:session,
+                                       nodes:indices}));
+        }
+
+        var detArrestMissRequest = function(session, indices) {
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = noActionOnreadystatechangeFn(xmlHttp);
+          xmlHttp.open("POST", rootUrl + "/det/arrestmiss", false);
+          xmlHttp.setRequestHeader("Content-type", "application/json");
+          xmlHttp.send(JSON.stringify({session:session,
+                                       nodes:indices}));
+        }
+
+        var detSetLocsRequest = function(session, indices) {
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = noActionOnreadystatechangeFn(xmlHttp);
+          xmlHttp.open("POST", rootUrl + "/det/setlocs", false);
+          xmlHttp.setRequestHeader("Content-type", "application/json");
+          xmlHttp.send(JSON.stringify({session:session,
+                                       nodes:indices}));
+        }
+
+        var jackStartLocsRequest = function(session, indices) {
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = noActionOnreadystatechangeFn(xmlHttp);
+          xmlHttp.open("POST", rootUrl + "/jack/startlocs", false);
+          xmlHttp.setRequestHeader("Content-type", "application/json");
+          xmlHttp.send(JSON.stringify({session:session,
+                                       nodes:indices}));
+        }
+
+        var jackTurnRequest = function(session) {
+          var xmlHttp = new XMLHttpRequest();
+          var turn = -1;
+          xmlHttp.onreadystatechange = function () {
+            if (xmlHttp.readyState == XMLHttpRequest.DONE) {
+              if (xmlHttp.status == 200) {
+                turn = parseInt(JSON.parse(xmlHttp.responseText)[0]);
+              } else if (xmlHttp.status === 400) {
+                // turn = -1
+              } else if (xmlHttp.status == 0) {
+                console.log("Server not available");
+              } else {
+                alert("Error: [" + xmlHttp.status + "] " + xmlHttp.responseText);
+              }
+            }
+          };
+          xmlHttp.open("GET", rootUrl + "/jack/turn/" + session, false);
+          xmlHttp.send(null);
+          return turn;
+        }
+
+        var detLocsRequest = function(session) {
+          var xmlHttp = new XMLHttpRequest();
+          var locs = [];
+          xmlHttp.onreadystatechange = function () {
+            if (xmlHttp.readyState == XMLHttpRequest.DONE) {
+              if (xmlHttp.status == 200) {
+                locs = JSON.parse(xmlHttp.responseText);
+              } else if (xmlHttp.status === 400) {
+                alert('Malformed request: ' + xmlHttp.responseText);
+              } else if (xmlHttp.status == 0) {
+                console.log("Server not available");
+              } else {
+                alert("Error: [" + xmlHttp.status + "] " + xmlHttp.responseText);
+              }
+            }
+          };
+          xmlHttp.open("GET", rootUrl + "/det/locs/" + session, false);
+          xmlHttp.send(null);
+          return locs;
+        }
+
+        var clearJackLocs = function(whiteNodes) {
+            // clear jackLocs
+            for (var i = 0; i < state.jackLocs.length; i++) {
+              whiteNodes[state.jackLocs[i]].alpha = 0.0;
+            }
+            state.jackLocs.length = 0;
+
+            // clear prevJackLocs
+            for (var i = 0; i < state.prevJackLocs.length; i++) {
+              whiteNodes[state.prevJackLocs[i]].alpha = 0.0;
+            }
+            state.prevJackLocs.length = 0;
+        }
+
+        var jackLocsRequest = function(session, whiteNodes, prevJackLocs, jackLocs) {
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = function () {
+            if (xmlHttp.readyState == XMLHttpRequest.DONE) {
+              if (xmlHttp.status == 200) {
+                var json = JSON.parse(xmlHttp.responseText);
+                var nodes = [];
+
+                clearJackLocs(whiteNodes);
+
+                // mark prev nodes
+                nodes = json.prevlocs;
+                for (var i = 0; i < nodes.length; i++) {
+                  whiteNodes[nodes[i]].alpha = 0.25;
+                  whiteNodes[nodes[i]].tint = 0xffff00;
+                  prevJackLocs.push(nodes[i])
+                }
+
+                // mark sure nodes
+                nodes = json.surelocs;
+                for (var i = 0; i < nodes.length; i++) {
+                  whiteNodes[nodes[i]].alpha = 0.25;
+                  whiteNodes[nodes[i]].tint = 0xff0000;
+                }
+
+                // mark curr nodes
+                nodes = json.currlocs;
+                for (var i = 0; i < nodes.length; i++) {
+                  whiteNodes[nodes[i]].alpha = 0.5;
+                  whiteNodes[nodes[i]].tint = 0xffaa00;
+                  jackLocs.push(nodes[i])
+                }
+
+                // mark new nodes
+                nodes = json.newlocs;
+                for (var i = 0; i < nodes.length; i++) {
+                  whiteNodes[nodes[i]].alpha = 0.5;
+                  whiteNodes[nodes[i]].tint = 0xff7700;
+                }
+              } else if (xmlHttp.status === 400) {
+                alert('Malformed request: ' + xmlHttp.responseText);
+              } else if (xmlHttp.status == 0) {
+                console.log("Server not available")
+              } else {
+                alert("Error: [" + xmlHttp.status + "] " + xmlHttp.responseText);
+              }
+            }
+          };
+          xmlHttp.open("GET", rootUrl + "/jack/locs/" + session, true);
+          xmlHttp.send(null);
+        }
+
+        var jackCurrLocsRequest = function(session, whiteNodes, jackLocs) {
+          var xmlHttp = new XMLHttpRequest();
+          xmlHttp.onreadystatechange = function () {
+            if (xmlHttp.readyState == XMLHttpRequest.DONE) {
+              if (xmlHttp.status == 200) {
+                var nodes = JSON.parse(xmlHttp.responseText);
+                clearJackLocs(whiteNodes);
+
+                // mark curr nodes
+                for (var i = 0; i < nodes.length; i++) {
+                  whiteNodes[nodes[i]].alpha = 0.5;
+                  whiteNodes[nodes[i]].tint = 0xffaa00;
+                  jackLocs.push(nodes[i])
+                }
+              } else if (xmlHttp.status === 400) {
+                alert('Malformed request: ' + xmlHttp.responseText);
+              } else if (xmlHttp.status == 0) {
+                console.log("Server not available")
+              } else {
+                alert("Error: [" + xmlHttp.status + "] " + xmlHttp.responseText);
+              }
+            }
+          };
+          xmlHttp.open("GET", rootUrl + "/jack/currlocs/" + session, true);
+          xmlHttp.send(null);
+        }
+
+        // State
+        // -----
+
+        var genSession = function() {
+          var session = queryParams("session");
+          if (session === undefined) {
+            // generate a random session string
+            session = Math.random().toString(36).substr(2, 5);
+            location.href = location.href + "?session=" + session;
+          }
+          return session;
+        }
+
+        var state = {
+          session : genSession(),
+          jackLocs : [],
+          prevJackLocs : [],
+          detLocs : [],
+          refresh : null, // request populated below
+          turn : null, // turn populated below
+        }
+
+        // Sprites
+        // -------
+
+        // White Nodes
+
+        var createDetHitMissMenuGroup = function(index, x, y) {
+          // x, y coordinates at turn number
+          var scale = 2;
+          y = y + (25 * scale); // supplied coordinates at node
+          var group = game.add.group();
+
+          var sniffMiss = game.add.sprite(x - (12 * scale), y, 'det_sniff_miss');
+          sniffMiss.scale.setTo(scale, scale);
+          sniffMiss.inputEnabled = true;
+          sniffMiss.input.useHandCursor = true;
+          sniffMiss.events.onInputDown.add(function() {
+            group.visible = false;
+            detSniffMissRequest(state.session, [index]);
+            state.refresh();
+          }, this);
+          group.add(sniffMiss);
+
+          var sniffHit = game.add.sprite(x - (63 * scale), y, 'det_sniff_hit');
+          sniffHit.scale.setTo(scale, scale);
+          sniffHit.inputEnabled = true;
+          sniffHit.input.useHandCursor = true;
+          sniffHit.events.onInputDown.add(function() {
+            group.visible = false;
+            detSniffHitRequest(state.session, [index]);
+            state.refresh();
+          }, this);
+          group.add(sniffHit);
+
+          var arrestMiss = game.add.sprite(x + (40 * scale), y, 'det_arrest_miss');
+          arrestMiss.scale.setTo(scale, scale);
+          arrestMiss.inputEnabled = true;
+          arrestMiss.input.useHandCursor = true;
+          arrestMiss.events.onInputDown.add(function() {
+            group.visible = false;
+            detArrestMissRequest(state.session, [index]);
+            state.refresh();
+          }, this);
+          group.add(arrestMiss);
+
+          group.visible = false;
+          return group;
+        }
+
+        var createWhiteNodeSprite = function(index, x, y) {
+          // create a det hit/miss menu
+          var detHitMissMenu = createDetHitMissMenuGroup(index, x, y);
+
+          // create the white node sprite
+          var bmd = game.add.bitmapData(50, 50);
+          //bmd.circle(25, 25, 25, '#ffff00');
+          bmd.circle(25, 25, 25, '#ffffff');
+          var sprite = game.add.sprite(x, y, bmd);
+          sprite.alpha = 0.0;
+          sprite.inputEnabled = true;
+          sprite.input.useHandCursor = true;
+
+          sprite.events.onInputDown.add(function() {
+            // choose jack starts
+            if (state.turn === 0) {
+              if (sprite.alpha === 0.0) {
+                if (state.jackLocs.length < 2) {
+                  sprite.alpha = 0.5;
+                  sprite.tint = 0xff0000;
+                  state.jackLocs.push(index);
+                }
+              } else {
+                sprite.alpha = 0.0;
+                sprite.tint = 0x000000;
+                state.jackLocs.splice(state.jackLocs.indexOf(index), 1);
+              }
+              return;
+            }
+
+            // choose sniff hit, miss or arrest miss
+            if (sprite.alpha !== 0.0) {
+              if (detHitMissMenu.visible) {
+                detHitMissMenu.visible = false;
+              } else {
+                game.world.bringToTop(detHitMissMenu);
+                detHitMissMenu.visible = true;
+              }
+            }
+          }, this);
+          return sprite;
+        }
+
+        // Black Nodes
+
+        var createDetSprite = function(index, x, y) {
+          // create the det sprite
+          var sprite = game.add.sprite(x - 9, y - 10, 'det');
+          sprite.inputEnabled = true;
+          sprite.input.useHandCursor = true;
+          sprite.visible = false;
+          sprite.alpha = 0.80;
+          sprite.events.onInputDown.add(function() {
+            if (sprite.visible) {
+              sprite.visible = false;
+              state.detLocs.splice(state.detLocs.indexOf(index), 1);
+              detSetLocsRequest(state.session, state.detLocs);
+            }
+
+          }, this);
+          return sprite;
+
+        }
+
+        var createBlackNodeSprite = function(index, x, y) {
+          // create det sprite
+          var detSprite = createDetSprite(index, x, y);
+
+          // create black node sprite
+          var bmd = game.add.bitmapData(30, 30);
+          bmd.circle(15, 15, 15, '#ffff00');
+          var sprite = game.add.sprite(x, y, bmd);
+          sprite.showDetSprite = function() {
+            detSprite.visible = true;
+            game.world.bringToTop(detSprite);
+          };
+          sprite.alpha = 0.0;
+          sprite.inputEnabled = true;
+          sprite.input.useHandCursor = true;
+          sprite.events.onInputDown.add(function() {
+            if (state.turn === 0) return
+            
+            if (!detSprite.visible) {
+              if (state.detLocs.length < 5) {
+                sprite.showDetSprite();
+                state.detLocs.push(index);
+                detSetLocsRequest(state.session, state.detLocs);
+              }
+            }
+          }, this);
+          return sprite;
+        }
+
+        // Jack
+
+        var createJackMoveMenuGroup = function(index, x, y,
+                                               jackSprite,
+                                               nextJackSprite,
+                                               nextNextJackSprite,
+                                               alleySprite,
+                                               carriageSprite) {
+          // x, y coordinates at turn number
+          var scale = 2;
+          y = y - (75 * scale) // move menu above
+          var group = game.add.group();
+
+          var jackWalk = game.add.sprite(x, y, 'jack_walk');
+          jackWalk.scale.setTo(scale, scale);
+          jackWalk.inputEnabled = true;
+          jackWalk.input.useHandCursor = true;
+          jackWalk.events.onInputDown.add(function() {
+            jackSprite.visible = false;
+            if (nextJackSprite !== null) {
+              nextJackSprite.visible = true;
+            }
+            group.visible = false;
+            jackWalkRequest(state.session);
+            state.refresh();
+          }, this);
+          group.add(jackWalk);
+
+          var jackAlley = game.add.sprite(x - (83 * scale), y + (7 * scale), 'jack_alley');
+          jackAlley.scale.setTo(scale, scale);
+          jackAlley.inputEnabled = true;
+          jackAlley.input.useHandCursor = true;
+          jackAlley.events.onInputDown.add(function() {
+            jackSprite.visible = false;
+            alleySprite.visible = true;
+            if (nextJackSprite !== null) {
+              nextJackSprite.visible = true;
+            }
+            group.visible = false;
+            jackAlleyRequest(state.session);
+            state.refresh();
+          }, this);
+          group.add(jackAlley);
+
+          var jackCarriage = game.add.sprite(x + (70 * scale), y - (12 * scale), 'jack_carriage');
+          jackCarriage.scale.setTo(scale, scale);
+          jackCarriage.inputEnabled = true;
+          jackCarriage.input.useHandCursor = true;
+          jackCarriage.events.onInputDown.add(function() {
+            jackSprite.visible = false;
+            carriageSprite.visible = true;
+            if (nextNextJackSprite !== null) {
+              nextNextJackSprite.visible = true;
+            }
+            group.visible = false;
+            jackCarriageRequest(state.session);
+            state.refresh();
+          }, this);
+          group.add(jackCarriage);
+
+          group.visible = false;
+          return group;
+        }
+
+        var createJackSprite = function(index, x, y, nextJackSprite, nextNextJackSprite) {
+          // create jack move icons
+          var alleySprite = game.add.sprite(x, y, 'jack_alley');
+          alleySprite.visible = false;
+          var carriageSprite = game.add.sprite(x, y, 'jack_carriage');
+          carriageSprite.visible = false;
+
+          // create the jack sprite
+          var sprite = game.add.sprite(x, y, 'jack');
+          sprite.inputEnabled = true;
+          sprite.input.useHandCursor = true;
+          sprite.visible = false;
+
+          // create jack move menu
+          var jackMoveMenu = createJackMoveMenuGroup(index, x, y,
+                                                     sprite,
+                                                     nextJackSprite,
+                                                     nextNextJackSprite,
+                                                     alleySprite,
+                                                     carriageSprite);
+
+          sprite.events.onInputDown.add(function () {
+            if (jackMoveMenu.visible) {
+              jackMoveMenu.visible = false;
+            } else {
+              game.world.bringToTop(jackMoveMenu);
+              jackMoveMenu.visible = true;
+            }
+          }, this);
+          return sprite;
+        }
+
+        var createStartNightSprite = function(x, y, jackSprite) {
+          // create the jack sprite
+          var sprite = game.add.sprite(x, y, 'jack');
+          sprite.inputEnabled = true;
+          sprite.input.useHandCursor = true;
+          sprite.visible = false;
+          sprite.events.onInputDown.add(function() {
+            if (state.jackLocs.length === 0) return;
+
+            jackStartLocsRequest(state.session, state.jackLocs);
+            sprite.visible = false;
+            jackSprite.visible = true;
+            state.turn = 1;
+          }, this);
+          return sprite;
+        }
+
+        function create () {
+          var boardSprite = game.add.sprite(0, 0, 'whitechapel');
+
+          var whiteNodes = {
+            1: createWhiteNodeSprite(1, 382 - 25, 68 - 25),
+            2: createWhiteNodeSprite(2, 613 - 25, 53 - 25),
+            3: createWhiteNodeSprite(3, 727 - 25, 53 - 25),
+            4: createWhiteNodeSprite(4, 791 - 25, 96 - 25),
+            5: createWhiteNodeSprite(5, 962 - 25, 57 - 25),
+            6: createWhiteNodeSprite(6, 306 - 25, 193 - 25),
+            7: createWhiteNodeSprite(7, 355 - 25, 177 - 25),
+            8: createWhiteNodeSprite(8, 604 - 25, 207 - 25),
+            9: createWhiteNodeSprite(9, 653 - 25, 171 - 25),
+            10: createWhiteNodeSprite(10, 715 - 25, 203 - 25),
+            11: createWhiteNodeSprite(11, 724 - 25, 138 - 25),
+            12: createWhiteNodeSprite(12, 895 - 25, 137 - 25),
+            13: createWhiteNodeSprite(13, 1002 - 25, 182 - 25),
+            14: createWhiteNodeSprite(14, 1072 - 25, 219 - 25),
+            15: createWhiteNodeSprite(15, 1135 - 25, 211 - 25),
+            16: createWhiteNodeSprite(16, 1190 - 25, 193 - 25),
+            17: createWhiteNodeSprite(17, 1211 - 25, 136 - 25),
+            18: createWhiteNodeSprite(18, 1373 - 25, 144 - 25),
+            19: createWhiteNodeSprite(19, 1448 - 25, 194 - 25),
+            20: createWhiteNodeSprite(20, 1535 - 25, 189 - 25),
+            21: createWhiteNodeSprite(21, 1757 - 25, 136 - 25),
+            22: createWhiteNodeSprite(22, 1834 - 25, 224 - 25),
+            23: createWhiteNodeSprite(23, 1970 - 25, 158 - 25),
+            24: createWhiteNodeSprite(24, 248 - 25, 248 - 25),
+            25: createWhiteNodeSprite(25, 293 - 25, 300 - 25),
+            26: createWhiteNodeSprite(26, 409 - 25, 236 - 25),
+            27: createWhiteNodeSprite(27, 478 - 25, 308 - 25),
+            28: createWhiteNodeSprite(28, 565 - 25, 260 - 25),
+            29: createWhiteNodeSprite(29, 745 - 25, 316 - 25),
+            30: createWhiteNodeSprite(30, 819 - 25, 263 - 25),
+            31: createWhiteNodeSprite(31, 1001 - 25, 308 - 25),
+            32: createWhiteNodeSprite(32, 1020 - 25, 263 - 25),
+            33: createWhiteNodeSprite(33, 1120 - 25, 267 - 25),
+            34: createWhiteNodeSprite(34, 1166 - 25, 317 - 25),
+            35: createWhiteNodeSprite(35, 1214 - 25, 293 - 25),
+            36: createWhiteNodeSprite(36, 1232 - 25, 241 - 25),
+            37: createWhiteNodeSprite(37, 1255 - 25, 327 - 25),
+            38: createWhiteNodeSprite(38, 1272 - 25, 270 - 25),
+            39: createWhiteNodeSprite(39, 1315 - 25, 287 - 25),
+            40: createWhiteNodeSprite(40, 1560 - 25, 270 - 25),
+            41: createWhiteNodeSprite(41, 1655 - 25, 240 - 25),
+            42: createWhiteNodeSprite(42, 1718 - 25, 267 - 25),
+            43: createWhiteNodeSprite(43, 225 - 25, 407 - 25),
+            44: createWhiteNodeSprite(44, 355 - 25, 365 - 25),
+            45: createWhiteNodeSprite(45, 452 - 25, 403 - 25),
+            46: createWhiteNodeSprite(46, 485 - 25, 350 - 25),
+            47: createWhiteNodeSprite(47, 572 - 25, 421 - 25),
+            48: createWhiteNodeSprite(48, 607 - 25, 394 - 25),
+            49: createWhiteNodeSprite(49, 793 - 25, 370 - 25),
+            50: createWhiteNodeSprite(50, 901 - 25, 340 - 25),
+            51: createWhiteNodeSprite(51, 936 - 25, 411 - 25),
+            52: createWhiteNodeSprite(52, 1024 - 25, 380 - 25),
+            53: createWhiteNodeSprite(53, 1087 - 25, 425 - 25),
+            54: createWhiteNodeSprite(54, 1108 - 25, 352 - 25),
+            55: createWhiteNodeSprite(55, 1213 - 25, 427 - 25),
+            56: createWhiteNodeSprite(56, 1381 - 25, 405 - 25),
+            57: createWhiteNodeSprite(57, 1491 - 25, 353 - 25),
+            58: createWhiteNodeSprite(58, 1705 - 25, 353 - 25),
+            59: createWhiteNodeSprite(59, 316 - 25, 475 - 25),
+            60: createWhiteNodeSprite(60, 370 - 25, 496 - 25),
+            61: createWhiteNodeSprite(61, 543 - 25, 495 - 25),
+            62: createWhiteNodeSprite(62, 657 - 25, 492 - 25),
+            63: createWhiteNodeSprite(63, 766 - 25, 479 - 25),
+            64: createWhiteNodeSprite(64, 808 - 25, 430 - 25),
+            65: createWhiteNodeSprite(65, 848 - 25, 498 - 25),
+            66: createWhiteNodeSprite(66, 888 - 25, 449 - 25),
+            67: createWhiteNodeSprite(67, 1004 - 25, 457 - 25),
+            68: createWhiteNodeSprite(68, 1165 - 25, 473 - 25),
+            69: createWhiteNodeSprite(69, 1303 - 25, 521 - 25),
+            70: createWhiteNodeSprite(70, 1383 - 25, 523 - 25),
+            71: createWhiteNodeSprite(71, 1468 - 25, 511 - 25),
+            72: createWhiteNodeSprite(72, 1554 - 25, 496 - 25),
+            73: createWhiteNodeSprite(73, 1595 - 25, 437 - 25),
+            74: createWhiteNodeSprite(74, 1665 - 25, 475 - 25),
+            75: createWhiteNodeSprite(75, 1734 - 25, 494 - 25),
+            76: createWhiteNodeSprite(76, 1780 - 25, 458 - 25),
+            77: createWhiteNodeSprite(77, 1935 - 25, 438 - 25),
+            78: createWhiteNodeSprite(78, 456 - 25, 586 - 25),
+            79: createWhiteNodeSprite(79, 474 - 25, 534 - 25),
+            80: createWhiteNodeSprite(80, 580 - 25, 542 - 25),
+            81: createWhiteNodeSprite(81, 651 - 25, 607 - 25),
+            82: createWhiteNodeSprite(82, 721 - 25, 525 - 25),
+            83: createWhiteNodeSprite(83, 852 - 25, 616 - 25),
+            84: createWhiteNodeSprite(84, 947 - 25, 567 - 25),
+            85: createWhiteNodeSprite(85, 1132 - 25, 614 - 25),
+            86: createWhiteNodeSprite(86, 1138 - 25, 540 - 25),
+            87: createWhiteNodeSprite(87, 1430 - 25, 560 - 25),
+            88: createWhiteNodeSprite(88, 1520 - 25, 557 - 25),
+            89: createWhiteNodeSprite(89, 1615 - 25, 574 - 25),
+            90: createWhiteNodeSprite(90, 1670 - 25, 535 - 25),
+            91: createWhiteNodeSprite(91, 1681 - 25, 592 - 25),
+            92: createWhiteNodeSprite(92, 1752 - 25, 613 - 25),
+            93: createWhiteNodeSprite(93, 1814 - 25, 574 - 25),
+            94: createWhiteNodeSprite(94, 1873 - 25, 533 - 25),
+            95: createWhiteNodeSprite(95, 315 - 25, 630 - 25),
+            96: createWhiteNodeSprite(96, 424 - 25, 653 - 25),
+            97: createWhiteNodeSprite(97, 529 - 25, 638 - 25),
+            98: createWhiteNodeSprite(98, 750 - 25, 671 - 25),
+            99: createWhiteNodeSprite(99, 953 - 25, 672 - 25),
+            100: createWhiteNodeSprite(100, 1020 - 25, 681 - 25),
+            101: createWhiteNodeSprite(101, 1225 - 25, 638 - 25),
+            102: createWhiteNodeSprite(102, 1274 - 25, 648 - 25),
+            103: createWhiteNodeSprite(103, 1358 - 25, 644 - 25),
+            104: createWhiteNodeSprite(104, 1488 - 25, 671 - 25),
+            105: createWhiteNodeSprite(105, 1577 - 25, 665 - 25),
+            106: createWhiteNodeSprite(106, 1632 - 25, 690 - 25),
+            107: createWhiteNodeSprite(107, 1690 - 25, 652 - 25),
+            108: createWhiteNodeSprite(108, 1700 - 25, 710 - 25),
+            109: createWhiteNodeSprite(109, 1820 - 25, 632 - 25),
+            110: createWhiteNodeSprite(110, 1831 - 25, 690 - 25),
+            111: createWhiteNodeSprite(111, 1920 - 25, 720 - 25),
+            112: createWhiteNodeSprite(112, 153 - 25, 789 - 25),
+            113: createWhiteNodeSprite(113, 236 - 25, 789 - 25),
+            114: createWhiteNodeSprite(114, 337 - 25, 757 - 25),
+            115: createWhiteNodeSprite(115, 436 - 25, 765 - 25),
+            116: createWhiteNodeSprite(116, 528 - 25, 767 - 25),
+            117: createWhiteNodeSprite(117, 597 - 25, 760 - 25),
+            118: createWhiteNodeSprite(118, 740 - 25, 806 - 25),
+            119: createWhiteNodeSprite(119, 820 - 25, 820 - 25),
+            120: createWhiteNodeSprite(120, 859 - 25, 733 - 25),
+            121: createWhiteNodeSprite(121, 906 - 25, 822 - 25),
+            122: createWhiteNodeSprite(122, 1003 - 25, 760 - 25),
+            123: createWhiteNodeSprite(123, 1020 - 25, 802 - 25),
+            124: createWhiteNodeSprite(124, 1131 - 25, 742 - 25),
+            125: createWhiteNodeSprite(125, 1155 - 25, 812 - 25),
+            126: createWhiteNodeSprite(126, 1196 - 25, 751 - 25),
+            127: createWhiteNodeSprite(127, 1336 - 25, 740 - 25),
+            128: createWhiteNodeSprite(128, 1375 - 25, 782 - 25),
+            129: createWhiteNodeSprite(129, 1443 - 25, 748 - 25),
+            130: createWhiteNodeSprite(130, 1543 - 25, 748 - 25),
+            131: createWhiteNodeSprite(131, 1648 - 25, 811 - 25),
+            132: createWhiteNodeSprite(132, 1769 - 25, 732 - 25),
+            133: createWhiteNodeSprite(133, 1778 - 25, 803 - 25),
+            134: createWhiteNodeSprite(134, 1846 - 25, 750 - 25),
+            135: createWhiteNodeSprite(135, 206 - 25, 847 - 25),
+            136: createWhiteNodeSprite(136, 282 - 25, 907 - 25),
+            137: createWhiteNodeSprite(137, 342 - 25, 821 - 25),
+            138: createWhiteNodeSprite(138, 355 - 25, 912 - 25),
+            139: createWhiteNodeSprite(139, 547 - 25, 910 - 25),
+            140: createWhiteNodeSprite(140, 997 - 25, 892 - 25),
+            141: createWhiteNodeSprite(141, 1090 - 25, 891 - 25),
+            142: createWhiteNodeSprite(142, 1295 - 25, 891 - 25),
+            143: createWhiteNodeSprite(143, 1329 - 25, 831 - 25),
+            144: createWhiteNodeSprite(144, 1419 - 25, 832 - 25),
+            145: createWhiteNodeSprite(145, 1506 - 25, 836 - 25),
+            146: createWhiteNodeSprite(146, 1716 - 25, 843 - 25),
+            147: createWhiteNodeSprite(147, 1940 - 25, 843 - 25),
+            148: createWhiteNodeSprite(148, 176 - 25, 951 - 25),
+            149: createWhiteNodeSprite(149, 266 - 25, 969 - 25),
+            150: createWhiteNodeSprite(150, 641 - 25, 948 - 25),
+            151: createWhiteNodeSprite(151, 773 - 25, 959 - 25),
+            152: createWhiteNodeSprite(152, 857 - 25, 984 - 25),
+            153: createWhiteNodeSprite(153, 883 - 25, 931 - 25),
+            154: createWhiteNodeSprite(154, 990 - 25, 988 - 25),
+            155: createWhiteNodeSprite(155, 1143 - 25, 981 - 25),
+            156: createWhiteNodeSprite(156, 1243 - 25, 954 - 25),
+            157: createWhiteNodeSprite(157, 1283 - 25, 1012 - 25),
+            158: createWhiteNodeSprite(158, 1345 - 25, 967 - 25),
+            159: createWhiteNodeSprite(159, 1418 - 25, 1002 - 25),
+            160: createWhiteNodeSprite(160, 1506 - 25, 999 - 25),
+            161: createWhiteNodeSprite(161, 1565 - 25, 937 - 25),
+            162: createWhiteNodeSprite(162, 150 - 25, 1042 - 25),
+            163: createWhiteNodeSprite(163, 341 - 25, 1032 - 25),
+            164: createWhiteNodeSprite(164, 457 - 25, 1054 - 25),
+            165: createWhiteNodeSprite(165, 728 - 25, 1095 - 25),
+            166: createWhiteNodeSprite(166, 741 - 25, 1035 - 25),
+            167: createWhiteNodeSprite(167, 876 - 25, 1040 - 25),
+            168: createWhiteNodeSprite(168, 988 - 25, 1065 - 25),
+            169: createWhiteNodeSprite(169, 1046 - 25, 1119 - 25),
+            170: createWhiteNodeSprite(170, 1069 - 25, 1042 - 25),
+            171: createWhiteNodeSprite(171, 1313 - 25, 1089 - 25),
+            172: createWhiteNodeSprite(172, 1382 - 25, 1042 - 25),
+            173: createWhiteNodeSprite(173, 1462 - 25, 1064 - 25),
+            174: createWhiteNodeSprite(174, 381 - 25, 1142 - 25),
+            175: createWhiteNodeSprite(175, 590 - 25, 1161 - 25),
+            176: createWhiteNodeSprite(176, 676 - 25, 1125 - 25),
+            177: createWhiteNodeSprite(177, 792 - 25, 1133 - 25),
+            178: createWhiteNodeSprite(178, 865 - 25, 1169 - 25),
+            179: createWhiteNodeSprite(179, 949 - 25, 1190 - 25),
+            180: createWhiteNodeSprite(180, 986 - 25, 1152 - 25),
+            181: createWhiteNodeSprite(181, 1092 - 25, 1153 - 25),
+            182: createWhiteNodeSprite(182, 1158 - 25, 1185 - 25),
+            183: createWhiteNodeSprite(183, 1206 - 25, 1127 - 25),
+            184: createWhiteNodeSprite(184, 1269 - 25, 1212 - 25),
+            185: createWhiteNodeSprite(185, 1356 - 25, 1135 - 25),
+            186: createWhiteNodeSprite(186, 1358 - 25, 1203 - 25),
+            187: createWhiteNodeSprite(187, 1412 - 25, 1166 - 25),
+            188: createWhiteNodeSprite(188, 544 - 25, 1224 - 25),
+            189: createWhiteNodeSprite(189, 748 - 25, 1241 - 25),
+            190: createWhiteNodeSprite(190, 804 - 25, 1287 - 25),
+            191: createWhiteNodeSprite(191, 963 - 25, 1248 - 25),
+            192: createWhiteNodeSprite(192, 1218 - 25, 1251 - 25),
+            193: createWhiteNodeSprite(193, 1316 - 25, 1246 - 25),
+            194: createWhiteNodeSprite(194, 1366 - 25, 1284 - 25),
+            195: createWhiteNodeSprite(195, 1465 - 25, 1277 - 25),
+          }
+
+          var blackNodes = {
+            1001: createBlackNodeSprite(1001, 428 - 15, 75 - 15),
+            1002: createBlackNodeSprite(1002, 567 - 15, 76 - 15),
+            1003: createBlackNodeSprite(1003, 666 - 15, 56 - 15),
+            1004: createBlackNodeSprite(1004, 789 - 15, 59 - 15),
+            1005: createBlackNodeSprite(1005, 1019 - 15, 93 - 15),
+            1006: createBlackNodeSprite(1006, 253 - 15, 129 - 15),
+            1007: createBlackNodeSprite(1007, 309 - 15, 138 - 15),
+            1008: createBlackNodeSprite(1008, 356 - 15, 115 - 15),
+            1009: createBlackNodeSprite(1009, 565 - 15, 154 - 15),
+            1010: createBlackNodeSprite(1010, 659 - 15, 133 - 15),
+            1011: createBlackNodeSprite(1011, 794 - 15, 132 - 15),
+            1012: createBlackNodeSprite(1012, 999 - 15, 136 - 15),
+            1013: createBlackNodeSprite(1013, 1127 - 15, 146 - 15),
+            1014: createBlackNodeSprite(1014, 1180 - 15, 140 - 15),
+            1015: createBlackNodeSprite(1015, 1277 - 15, 141 - 15),
+            1016: createBlackNodeSprite(1016, 1422 - 15, 143 - 15),
+            1017: createBlackNodeSprite(1017, 1521 - 15, 151 - 15),
+            1018: createBlackNodeSprite(1018, 302 - 15, 244 - 15),
+            1019: createBlackNodeSprite(1019, 348 - 15, 241 - 15),
+            1020: createBlackNodeSprite(1020, 564 - 15, 206 - 15),
+            1021: createBlackNodeSprite(1021, 650 - 15, 204 - 15),
+            1022: createBlackNodeSprite(1022, 798 - 15, 202 - 15),
+            1023: createBlackNodeSprite(1023, 915 - 15, 251 - 15),
+            1024: createBlackNodeSprite(1024, 1012 - 15, 232 - 15),
+            1025: createBlackNodeSprite(1025, 250 - 15, 311 - 15),
+            1026: createBlackNodeSprite(1026, 336 - 15, 337 - 15),
+            1027: createBlackNodeSprite(1027, 398 - 15, 321 - 15),
+            1028: createBlackNodeSprite(1028, 568 - 15, 297 - 15),
+            1029: createBlackNodeSprite(1029, 827 - 15, 307 - 15),
+            1030: createBlackNodeSprite(1030, 974 - 15, 318 - 15),
+            1031: createBlackNodeSprite(1031, 1031 - 15, 297 - 15),
+            1032: createBlackNodeSprite(1032, 1091 - 15, 277 - 15),
+            1033: createBlackNodeSprite(1033, 1151 - 15, 258 - 15),
+            1034: createBlackNodeSprite(1034, 1202 - 15, 246 - 15),
+            1035: createBlackNodeSprite(1035, 1263 - 15, 235 - 15),
+            1036: createBlackNodeSprite(1036, 228 - 15, 369 - 15),
+            1037: createBlackNodeSprite(1037, 275 - 15, 370 - 15),
+            1038: createBlackNodeSprite(1038, 410 - 15, 359 - 15),
+            1039: createBlackNodeSprite(1039, 570 - 15, 335 - 15),
+            1040: createBlackNodeSprite(1040, 660 - 15, 326 - 15),
+            1041: createBlackNodeSprite(1041, 261 - 15, 422 - 15),
+            1042: createBlackNodeSprite(1042, 305 - 15, 440 - 15),
+            1043: createBlackNodeSprite(1043, 445 - 15, 459 - 15),
+            1044: createBlackNodeSprite(1044, 565 - 15, 384 - 15),
+            1045: createBlackNodeSprite(1045, 739 - 15, 381 - 15),
+            1046: createBlackNodeSprite(1046, 846 - 15, 362 - 15),
+            1047: createBlackNodeSprite(1047, 1012 - 15, 344 - 15),
+            1048: createBlackNodeSprite(1048, 331 - 15, 511 - 15),
+            1049: createBlackNodeSprite(1049, 413 - 15, 504 - 15),
+            1050: createBlackNodeSprite(1050, 493 - 15, 468 - 15),
+            1051: createBlackNodeSprite(1051, 578 - 15, 455 - 15),
+            1052: createBlackNodeSprite(1052, 637 - 15, 453 - 15),
+            1053: createBlackNodeSprite(1053, 756 - 15, 440 - 15),
+            1054: createBlackNodeSprite(1054, 868 - 15, 419 - 15),
+            1055: createBlackNodeSprite(1055, 996 - 15, 391 - 15),
+            1056: createBlackNodeSprite(1056, 1053 - 15, 369 - 15),
+            1057: createBlackNodeSprite(1057, 354 - 15, 579 - 15),
+            1058: createBlackNodeSprite(1058, 442 - 15, 547 - 15),
+            1059: createBlackNodeSprite(1059, 403 - 15, 628 - 15),
+            1060: createBlackNodeSprite(1060, 497 - 15, 571 - 15),
+            1061: createBlackNodeSprite(1061, 676 - 15, 529 - 15),
+            1062: createBlackNodeSprite(1062, 774 - 15, 517 - 15),
+            1063: createBlackNodeSprite(1063, 909 - 15, 485 - 15),
+            1064: createBlackNodeSprite(1064, 951 - 15, 471 - 15),
+            1065: createBlackNodeSprite(1065, 1052 - 15, 439 - 15),
+            1066: createBlackNodeSprite(1066, 1124 - 15, 404 - 15),
+            1067: createBlackNodeSprite(1067, 1181 - 15, 370 - 15),
+            1068: createBlackNodeSprite(1068, 1227 - 15, 343 - 15),
+            1069: createBlackNodeSprite(1069, 1281 - 15, 304 - 15),
+            1070: createBlackNodeSprite(1070, 1389 - 15, 231 - 15),
+            1071: createBlackNodeSprite(1071, 1547 - 15, 222 - 15),
+            1072: createBlackNodeSprite(1072, 1636 - 15, 191 - 15),
+            1073: createBlackNodeSprite(1073, 1675 - 15, 166 - 15),
+            1074: createBlackNodeSprite(1074, 1836 - 15, 103 - 15),
+            1075: createBlackNodeSprite(1075, 1940 - 15, 65 - 15),
+            1076: createBlackNodeSprite(1076, 285 - 15, 671 - 15),
+            1077: createBlackNodeSprite(1077, 445 - 15, 679 - 15),
+            1078: createBlackNodeSprite(1078, 617 - 15, 625 - 15),
+            1079: createBlackNodeSprite(1079, 713 - 15, 602 - 15),
+            1080: createBlackNodeSprite(1080, 827 - 15, 570 - 15),
+            1081: createBlackNodeSprite(1081, 932 - 15, 523 - 15),
+            1082: createBlackNodeSprite(1082, 1133 - 15, 436 - 15),
+            1083: createBlackNodeSprite(1083, 1347 - 15, 338 - 15),
+            1084: createBlackNodeSprite(1084, 1695 - 15, 215 - 15),
+            1085: createBlackNodeSprite(1085, 191 - 15, 746 - 15),
+            1086: createBlackNodeSprite(1086, 355 - 15, 732 - 15),
+            1087: createBlackNodeSprite(1087, 481 - 15, 719 - 15),
+            1088: createBlackNodeSprite(1088, 567 - 15, 708 - 15),
+            1089: createBlackNodeSprite(1089, 671 - 15, 643 - 15),
+            1090: createBlackNodeSprite(1090, 169 - 15, 816 - 15),
+            1091: createBlackNodeSprite(1091, 278 - 15, 833 - 15),
+            1092: createBlackNodeSprite(1092, 369 - 15, 779 - 15),
+            1093: createBlackNodeSprite(1093, 249 - 15, 872 - 15),
+            1094: createBlackNodeSprite(1094, 309 - 15, 864 - 15),
+            1095: createBlackNodeSprite(1095, 162 - 15, 981 - 15),
+            1096: createBlackNodeSprite(1096, 248 - 15, 995 - 15),
+            1097: createBlackNodeSprite(1097, 312 - 15, 941 - 15),
+            1098: createBlackNodeSprite(1098, 565 - 15, 816 - 15),
+            1099: createBlackNodeSprite(1099, 631 - 15, 809 - 15),
+            1100: createBlackNodeSprite(1100, 775 - 15, 723 - 15),
+            1101: createBlackNodeSprite(1101, 877 - 15, 663 - 15),
+            1102: createBlackNodeSprite(1102, 964 - 15, 609 - 15),
+            1103: createBlackNodeSprite(1103, 314 - 15, 1044 - 15),
+            1104: createBlackNodeSprite(1104, 377 - 15, 1010 - 15),
+            1105: createBlackNodeSprite(1105, 421 - 15, 983 - 15),
+            1106: createBlackNodeSprite(1106, 479 - 15, 948 - 15),
+            1107: createBlackNodeSprite(1107, 609 - 15, 874 - 15),
+            1108: createBlackNodeSprite(1108, 656 - 15, 850 - 15),
+            1109: createBlackNodeSprite(1109, 798 - 15, 771 - 15),
+            1109: createBlackNodeSprite(1109, 798 - 15, 771 - 15),
+            1110: createBlackNodeSprite(1110, 925 - 15, 696 - 15),
+            1111: createBlackNodeSprite(1111, 984 - 15, 649 - 15),
+            1112: createBlackNodeSprite(1112, 1010 - 15, 634 - 15),
+            1113: createBlackNodeSprite(1113, 1099 - 15, 569 - 15),
+            1114: createBlackNodeSprite(1114, 1185 - 15, 503 - 15),
+            1115: createBlackNodeSprite(1115, 1241 - 15, 473 - 15),
+            1116: createBlackNodeSprite(1116, 1310 - 15, 438 - 15),
+            1117: createBlackNodeSprite(1117, 1436 - 15, 380 - 15),
+            1118: createBlackNodeSprite(1118, 1574 - 15, 319 - 15),
+            1119: createBlackNodeSprite(1119, 1672 - 15, 284 - 15),
+            1120: createBlackNodeSprite(1120, 1794 - 15, 241 - 15),
+            1121: createBlackNodeSprite(1121, 1877 - 15, 211 - 15),
+            1122: createBlackNodeSprite(1122, 1587 - 15, 395 - 15),
+            1123: createBlackNodeSprite(1123, 1719 - 15, 395 - 15),
+            1124: createBlackNodeSprite(1124, 1925 - 15, 338 - 15),
+            1125: createBlackNodeSprite(1125, 1230 - 15, 528 - 15),
+            1126: createBlackNodeSprite(1126, 1344 - 15, 523 - 15),
+            1127: createBlackNodeSprite(1127, 1426 - 15, 519 - 15),
+            1128: createBlackNodeSprite(1128, 1510 - 15, 503 - 15),
+            1129: createBlackNodeSprite(1129, 1602 - 15, 484 - 15),
+            1130: createBlackNodeSprite(1130, 1730 - 15, 466 - 15),
+            1131: createBlackNodeSprite(1131, 1836 - 15, 453 - 15),
+            1132: createBlackNodeSprite(1132, 1612 - 15, 544 - 15),
+            1133: createBlackNodeSprite(1133, 1740 - 15, 524 - 15),
+            1134: createBlackNodeSprite(1134, 1845 - 15, 505 - 15),
+            1135: createBlackNodeSprite(1135, 1321 - 15, 628 - 15),
+            1136: createBlackNodeSprite(1136, 1432 - 15, 600 - 15),
+            1137: createBlackNodeSprite(1137, 1480 - 15, 596 - 15),
+            1138: createBlackNodeSprite(1138, 1527 - 15, 610 - 15),
+            1139: createBlackNodeSprite(1139, 1619 - 15, 604 - 15),
+            1140: createBlackNodeSprite(1140, 1746 - 15, 583 - 15),
+            1141: createBlackNodeSprite(1141, 1880 - 15, 565 - 15),
+            1142: createBlackNodeSprite(1142, 1107 - 15, 690 - 15),
+            1143: createBlackNodeSprite(1143, 1157 - 15, 660 - 15),
+            1144: createBlackNodeSprite(1144, 1439 - 15, 674 - 15),
+            1145: createBlackNodeSprite(1145, 1534 - 15, 668 - 15),
+            1146: createBlackNodeSprite(1146, 1627 - 15, 661 - 15),
+            1147: createBlackNodeSprite(1147, 1756 - 15, 643 - 15),
+            1148: createBlackNodeSprite(1148, 1891 - 15, 624 - 15),
+            1149: createBlackNodeSprite(1149, 1045 - 15, 739 - 15),
+            1150: createBlackNodeSprite(1150, 1084 - 15, 760 - 15),
+            1151: createBlackNodeSprite(1151, 1260 - 15, 749 - 15),
+            1152: createBlackNodeSprite(1152, 1303 - 15, 745 - 15),
+            1153: createBlackNodeSprite(1153, 1370 - 15, 736 - 15),
+            1154: createBlackNodeSprite(1154, 1493 - 15, 752 - 15),
+            1155: createBlackNodeSprite(1155, 1637 - 15, 722 - 15),
+            1156: createBlackNodeSprite(1156, 1763 - 15, 695 - 15),
+            1157: createBlackNodeSprite(1157, 1905 - 15, 677 - 15),
+            1158: createBlackNodeSprite(1158, 1644 - 15, 774 - 15),
+            1159: createBlackNodeSprite(1159, 1774 - 15, 763 - 15),
+            1160: createBlackNodeSprite(1160, 1929 - 15, 761 - 15),
+            1161: createBlackNodeSprite(1161, 905 - 15, 790 - 15),
+            1162: createBlackNodeSprite(1162, 965 - 15, 800 - 15),
+            1163: createBlackNodeSprite(1163, 1092 - 15, 812 - 15),
+            1164: createBlackNodeSprite(1164, 1202 - 15, 822 - 15),
+            1165: createBlackNodeSprite(1165, 1259 - 15, 829 - 15),
+            1166: createBlackNodeSprite(1166, 1385 - 15, 833 - 15),
+            1167: createBlackNodeSprite(1167, 1455 - 15, 834 - 15),
+            1168: createBlackNodeSprite(1168, 1559 - 15, 834 - 15),
+            1169: createBlackNodeSprite(1169, 1618 - 15, 842 - 15),
+            1170: createBlackNodeSprite(1170, 1652 - 15, 842 - 15),
+            1171: createBlackNodeSprite(1171, 1784 - 15, 846 - 15),
+            1172: createBlackNodeSprite(1172, 742 - 15, 896 - 15),
+            1173: createBlackNodeSprite(1173, 843 - 15, 858 - 15),
+            1174: createBlackNodeSprite(1174, 933 - 15, 866 - 15),
+            1175: createBlackNodeSprite(1175, 1038 - 15, 859 - 15),
+            1176: createBlackNodeSprite(1176, 865 - 15, 901 - 15),
+            1177: createBlackNodeSprite(1177, 961 - 15, 917 - 15),
+            1178: createBlackNodeSprite(1178, 1048 - 15, 896 - 15),
+            1179: createBlackNodeSprite(1179, 1137 - 15, 886 - 15),
+            1180: createBlackNodeSprite(1180, 654 - 15, 1008 - 15),
+            1181: createBlackNodeSprite(1181, 728 - 15, 985 - 15),
+            1182: createBlackNodeSprite(1182, 900 - 15, 962 - 15),
+            1183: createBlackNodeSprite(1183, 671 - 15, 1058 - 15),
+            1184: createBlackNodeSprite(1184, 815 - 15, 1005 - 15),
+            1185: createBlackNodeSprite(1185, 471 - 15, 1130 - 15),
+            1186: createBlackNodeSprite(1186, 566 - 15, 1133 - 15),
+            1187: createBlackNodeSprite(1187, 486 - 15, 1231 - 15),
+            1188: createBlackNodeSprite(1188, 605 - 15, 1189 - 15),
+            1189: createBlackNodeSprite(1189, 608 - 15, 1217 - 15),
+            1190: createBlackNodeSprite(1190, 686 - 15, 1201 - 15),
+            1191: createBlackNodeSprite(1191, 738 - 15, 1150 - 15),
+            1192: createBlackNodeSprite(1192, 848 - 15, 1118 - 15),
+            1193: createBlackNodeSprite(1193, 958 - 15, 1083 - 15),
+            1194: createBlackNodeSprite(1194, 1021 - 15, 1055 - 15),
+            1195: createBlackNodeSprite(1195, 747 - 15, 1202 - 15),
+            1196: createBlackNodeSprite(1196, 930 - 15, 1153 - 15),
+            1197: createBlackNodeSprite(1197, 1086 - 15, 1108 - 15),
+            1198: createBlackNodeSprite(1198, 879 - 15, 1211 - 15),
+            1199: createBlackNodeSprite(1199, 702 - 15, 1309 - 15),
+            1200: createBlackNodeSprite(1200, 894 - 15, 1269 - 15),
+            1201: createBlackNodeSprite(1201, 1030 - 15, 1235 - 15),
+            1202: createBlackNodeSprite(1202, 1079 - 15, 1202 - 15),
+            1203: createBlackNodeSprite(1203, 1151 - 15, 1103 - 15),
+            1204: createBlackNodeSprite(1204, 1253 - 15, 891 - 15),
+            1205: createBlackNodeSprite(1205, 1340 - 15, 892 - 15),
+            1206: createBlackNodeSprite(1206, 1343 - 15, 926 - 15),
+            1207: createBlackNodeSprite(1207, 1401 - 15, 924 - 15),
+            1208: createBlackNodeSprite(1208, 1513 - 15, 922 - 15),
+            1209: createBlackNodeSprite(1209, 1561 - 15, 890 - 15),
+            1210: createBlackNodeSprite(1210, 1218 - 15, 1017 - 15),
+            1211: createBlackNodeSprite(1211, 1348 - 15, 1010 - 15),
+            1212: createBlackNodeSprite(1212, 1382 - 15, 1007 - 15),
+            1213: createBlackNodeSprite(1213, 1456 - 15, 1001 - 15),
+            1214: createBlackNodeSprite(1214, 1512 - 15, 1063 - 15),
+            1215: createBlackNodeSprite(1215, 1563 - 15, 1061 - 15),
+            1216: createBlackNodeSprite(1216, 1201 - 15, 1057 - 15),
+            1217: createBlackNodeSprite(1217, 1203 - 15, 1097 - 15),
+            1218: createBlackNodeSprite(1218, 1354 - 15, 1086 - 15),
+            1219: createBlackNodeSprite(1219, 1384 - 15, 1076 - 15),
+            1220: createBlackNodeSprite(1220, 1425 - 15, 1069 - 15),
+            1221: createBlackNodeSprite(1221, 1280 - 15, 1114 - 15),
+            1222: createBlackNodeSprite(1222, 1207 - 15, 1174 - 15),
+            1223: createBlackNodeSprite(1223, 1263 - 15, 1144 - 15),
+            1224: createBlackNodeSprite(1224, 1303 - 15, 1141 - 15),
+            1225: createBlackNodeSprite(1225, 1409 - 15, 1130 - 15),
+            1226: createBlackNodeSprite(1226, 1461 - 15, 1124 - 15),
+            1227: createBlackNodeSprite(1227, 1311 - 15, 1208 - 15),
+            1228: createBlackNodeSprite(1228, 1411 - 15, 1200 - 15),
+            1229: createBlackNodeSprite(1229, 1411 - 15, 1237 - 15),
+            1230: createBlackNodeSprite(1230, 1273 - 15, 1280 - 15),
+            1231: createBlackNodeSprite(1231, 1318 - 15, 1286 - 15),
+            1232: createBlackNodeSprite(1232, 1414 - 15, 1280 - 15),
+            1233: createBlackNodeSprite(1233, 841 - 15, 1052 - 15),
+            1234: createBlackNodeSprite(1234, 1610 - 15, 939 - 15),
+          }
+
+          var jackSprite15 = createJackSprite(15, 1726 - 30, 1351 - 28, null, null);
+          var jackSprite14 = createJackSprite(14, 1656 - 30, 1351 - 28, jackSprite15, null);
+          var jackSprite13 = createJackSprite(13, 1585 - 30, 1351 - 28, jackSprite14, jackSprite15);
+          var jackSprite12 = createJackSprite(12, 1515 - 30, 1351 - 28, jackSprite13, jackSprite14);
+          var jackSprite11 = createJackSprite(11, 1444 - 30, 1351 - 28, jackSprite12, jackSprite13);
+          var jackSprite10 = createJackSprite(10, 1373 - 30, 1351 - 28, jackSprite11, jackSprite12);
+          var jackSprite9 = createJackSprite(9, 1303 - 30, 1351 - 28, jackSprite10, jackSprite11);
+          var jackSprite8 = createJackSprite(8, 1232 - 30, 1351 - 28, jackSprite9, jackSprite10);
+          var jackSprite7 = createJackSprite(7, 1161 - 30, 1351 - 28, jackSprite8, jackSprite9);
+          var jackSprite6 = createJackSprite(6, 1090 - 30, 1351 - 28, jackSprite7, jackSprite8);
+          var jackSprite5 = createJackSprite(5, 1020 - 30, 1351 - 28, jackSprite6, jackSprite7);
+          var jackSprite4 = createJackSprite(4, 949 - 30, 1351 - 28, jackSprite5, jackSprite6);
+          var jackSprite3 = createJackSprite(3, 877 - 30, 1351 - 28, jackSprite4, jackSprite5);
+          var jackSprite2 = createJackSprite(2, 806 - 30, 1351 - 28, jackSprite3, jackSprite4);
+          var jackSprite1 = createJackSprite(1, 734 - 30, 1351 - 28, jackSprite2, jackSprite3);
+          var jackTurn = function(turn) {
+            if (turn === 1) return jackSprite1
+            if (turn === 2) return jackSprite2
+            if (turn === 3) return jackSprite3
+            if (turn === 4) return jackSprite4
+            if (turn === 5) return jackSprite5
+            if (turn === 6) return jackSprite6
+            if (turn === 7) return jackSprite7
+            if (turn === 8) return jackSprite8
+            if (turn === 9) return jackSprite9
+            if (turn === 10) return jackSprite10
+            if (turn === 11) return jackSprite11
+            if (turn === 12) return jackSprite12
+            if (turn === 13) return jackSprite13
+            if (turn === 14) return jackSprite14
+            if (turn === 15) return jackSprite15
+          };
+          var startNightSprite = createStartNightSprite(660 - 30, 1351 - 28, jackSprite1);
+
+          // finish late initializing state
+          state.turn = jackTurnRequest(state.session) + 1;
+          state.refresh = function() {
+            jackLocsRequest(state.session, whiteNodes, state.prevJackLocs, state.jackLocs);
+          };
+          
+          if (state.turn === 0) {
+            startNightSprite.visible = true;
+          } else if (state.turn > 0) {
+            // show jack at the current turn
+            jackTurn(state.turn).visible = true;
+
+            // show the detectives at their current positions
+            var detLocs = detLocsRequest(state.session);
+            state.detLocs = detLocs;
+            for (var i = 0; i < detLocs.length; i++) {
+              blackNodes[detLocs[i]].showDetSprite();
+            }
+
+            // show current jack locs 
+            state.refresh();
+          }
+        }
+      };
+    </script>
+  </head>
+  <body>
+  </body>
+</html>

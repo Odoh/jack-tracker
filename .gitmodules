@@ -1,0 +1,3 @@
+[submodule "whitechapel"]
+	path = whitechapel
+	url = git@bitbucket.org:turbulencetoo/whitechapel.git
